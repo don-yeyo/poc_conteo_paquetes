@@ -128,6 +128,13 @@ class AreaCounter:
         self.count_out = 0
         self.object_state = {}
     
+    def set_roi_if_needed(self, x1, y1, x2, y2):
+        new_roi = (min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
+        if self.roi != new_roi:
+            self.roi = new_roi
+            self.object_state = {}
+            print(f"ROI actualizado: x={x1}-{x2}, y={y1}-{y2}")
+    
     def set_roi(self, x1, y1, x2, y2):
         self.roi = (min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
         self.object_state = {}
@@ -143,34 +150,32 @@ class AreaCounter:
         if self.roi is None:
             return
         
-        print(f"\n--- Frame: {len(objects)} objetos detectados ---")
-        
         for oid, data in objects.items():
             x, y, w, h = data['bbox']
             center_x, center_y = x + w // 2, y + h // 2
             
             in_roi = self.is_point_in_roi(center_x, center_y)
-            print(f"  ID:{oid} center=({center_x},{center_y}) inside={in_roi}")
             
             if oid not in self.object_state:
-                self.object_state[oid] = {'inside': in_roi, 'first_seen': True}
+                self.object_state[oid] = {'inside': in_roi, 'counted_in': False, 'counted_out': False}
             else:
                 was_inside = self.object_state[oid]['inside']
                 self.object_state[oid]['inside'] = in_roi
                 
-                if self.object_state[oid].get('first_seen', False):
-                    self.object_state[oid]['first_seen'] = False
-                    continue
-                
-                if not was_inside and in_roi:
+                if was_inside == False and in_roi == True and not self.object_state[oid]['counted_in']:
                     self.count_in += 1
-                    print(f">>> PAQUETE INGRESÓ #{self.count_in} - ID:{oid}")
-                elif was_inside and not in_roi:
+                    self.object_state[oid]['counted_in'] = True
+                    self.object_state[oid]['counted_out'] = False
+                    print(f">>> PAQUETE INGRESÓ #{self.count_in} - ID:{oid} en ({center_x},{center_y})")
+                elif was_inside == True and in_roi == False and not self.object_state[oid]['counted_out']:
                     self.count_out += 1
-                    print(f">>> PAQUETE SALIÓ #{self.count_out} - ID:{oid}")
+                    self.object_state[oid]['counted_out'] = True
+                    self.object_state[oid]['counted_in'] = False
+                    print(f">>> PAQUETE SALIÓ #{self.count_out} - ID:{oid} de ({center_x},{center_y})")
         
+        current_ids = set(objects.keys())
         for oid in list(self.object_state.keys()):
-            if oid not in objects:
+            if oid not in current_ids:
                 del self.object_state[oid]
     
     def reset(self):
@@ -405,7 +410,7 @@ def main():
         objects = tracker.update(detections)
         
         if roi_selector.roi:
-            counter.set_roi(
+            counter.set_roi_if_needed(
                 roi_selector.roi[0], roi_selector.roi[1],
                 roi_selector.roi[0] + roi_selector.roi[2],
                 roi_selector.roi[1] + roi_selector.roi[3]

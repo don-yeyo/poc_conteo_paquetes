@@ -1,1 +1,0 @@
-# POC Contabilidad de Paquetes
