@@ -262,7 +262,7 @@ def download_model():
     return model_path
 
 
-def create_panel(h, counter, fps, active, roi_set):
+def create_panel(h, counter, fps, active, roi_set, cam_idx=0, has_multiple_cams=False):
     pw, ph = 280, h
     panel = np.zeros((ph, pw, 3), dtype=np.uint8)
     panel[:] = (25, 25, 35)
@@ -270,6 +270,10 @@ def create_panel(h, counter, fps, active, roi_set):
     y = 25
     cv2.putText(panel, "CONTEO DE PAQUETES", (15, y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    
+    if has_multiple_cams:
+        cv2.putText(panel, f"Cam: {cam_idx}", (pw - 90, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
     
     cv2.line(panel, (10, y + 10), (pw - 10, y + 10), (80, 80, 80), 1)
     y += 50
@@ -315,6 +319,10 @@ def create_panel(h, counter, fps, active, roi_set):
     cv2.putText(panel, "R = Resetear conteo", (20, y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
     y += 18
+    if has_multiple_cams:
+        cv2.putText(panel, "C = Cambiar camara", (20, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+        y += 18
     cv2.putText(panel, "Q = Salir", (20, y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
     
@@ -354,6 +362,56 @@ def get_cameras(max_check=5):
     return cameras
 
 
+def select_camera_menu(cameras):
+    if len(cameras) == 1:
+        print(f"Solo una camara disponible: {cameras[0]}")
+        return cameras[0]
+    
+    print("\n" + "=" * 40)
+    print("SELECCION DE CAMARA")
+    print("=" * 40)
+    for idx, cam in enumerate(cameras):
+        print(f"  {idx + 1} - Camara {cam}")
+    print("=" * 40)
+    
+    while True:
+        choice = input("Seleccione camara (numero): ").strip()
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(cameras):
+                return cameras[idx]
+        print("Opcion invalida, intente de nuevo")
+
+
+def camera_selector_menu(all_cameras, current_idx):
+    menu_h = 300
+    menu_w = 400
+    menu = np.zeros((menu_h, menu_w, 3), dtype=np.uint8)
+    menu[:] = (30, 30, 40)
+    
+    cv2.putText(menu, "SELECCION DE CAMARA", (50, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    cv2.line(menu, (30, 60), (menu_w - 30, 60), (100, 100, 100), 1)
+    
+    y = 100
+    for idx, cam in enumerate(all_cameras):
+        color = (0, 255, 0) if cam == current_idx else (180, 180, 180)
+        prefix = ">>" if cam == current_idx else "  "
+        text = f"{prefix} Camara {cam}"
+        cv2.putText(menu, text, (60, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        y += 35
+    
+    cv2.putText(menu, "Presione ENTER para confirmar", (50, menu_h - 50),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+    cv2.putText(menu, "ESC para cancelar", (50, menu_h - 25),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+    
+    cv2.imshow("Seleccionar Camara", menu)
+    cv2.waitKey(0)
+    cv2.destroyWindow("Seleccionar Camara")
+
+
 def main():
     print("=" * 50)
     print("POC - Conteo de Paquetes en Cajon")
@@ -364,8 +422,8 @@ def main():
         print("No se encontraron camaras")
         return
     
-    print(f"Camaras: {cameras}")
-    cam_idx = cameras[0]
+    print(f"Camaras detectadas: {cameras}")
+    cam_idx = select_camera_menu(cameras)
     
     model_path = download_model()
     
@@ -387,6 +445,8 @@ def main():
     print("\nControles:")
     print("  L = Definir area del cajon (clic y arrastrar)")
     print("  R = Resetear conteo")
+    if len(cameras) > 1:
+        print("  C = Cambiar camara")
     print("  Q = Salir")
     
     roi_mode = False
@@ -422,7 +482,7 @@ def main():
         frame = roi_selector.draw_roi(frame)
         
         roi_set = roi_selector.roi is not None
-        panel = create_panel(h, counter, fps, len(objects), roi_set)
+        panel = create_panel(h, counter, fps, len(objects), roi_set, cam_idx, len(cameras) > 1)
         combined = np.hstack([frame, panel])
         
         cv2.imshow(window_name, combined)
@@ -447,6 +507,18 @@ def main():
                 print(">>> Modo definir area: clic y arrastra para marcar el cajon")
             else:
                 print(">>> Saliendo del modo definir area")
+        elif key == ord('c') or key == ord('C'):
+            if len(cameras) > 1:
+                camera_selector_menu(cameras, cam_idx)
+                cap.release()
+                cam_idx = select_camera_menu(cameras)
+                cap = cv2.VideoCapture(cam_idx)
+                ret, frame = cap.read()
+                if ret:
+                    h, w = frame.shape[:2]
+                    print(f"Camara cambiada a: {cam_idx} ({w}x{h})")
+            else:
+                print("Solo hay una camara disponible")
     
     cap.release()
     cv2.destroyAllWindows()
