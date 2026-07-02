@@ -412,10 +412,64 @@ def camera_selector_menu(all_cameras, current_idx):
     cv2.destroyWindow("Seleccionar Camara")
 
 
+def show_main_menu():
+    print("\n" + "=" * 50)
+    print("MENU PRINCIPAL - Conteo de Paquetes")
+    print("=" * 50)
+    print("  1 - Modo Detección (usar modelo existente)")
+    print("  2 - Etiquetar nuevas imágenes")
+    print("  3 - Entrenar modelo personalizado")
+    print("  4 - Salir")
+    print("=" * 50)
+    
+    while True:
+        choice = input("Seleccione opción: ").strip()
+        if choice in ['1', '2', '3', '4']:
+            return choice
+        print("Opción inválida")
+
+
+def run_labeling_mode():
+    print("\n>>> MODO ETIQUETADO")
+    from labeling_tool import run_labeling_interface
+    run_labeling_interface(classes=['producto'])
+
+
+def run_training_mode():
+    print("\n>>> MODO ENTRENAMIENTO")
+    from train_model import train_model
+    
+    dataset_dir = input("Directorio del dataset (default: dataset): ").strip() or 'dataset'
+    output_dir = input("Directorio de salida (default: models): ").strip() or 'models'
+    
+    try:
+        epochs = int(input("Épocas (default 50): ").strip() or '50')
+    except ValueError:
+        epochs = 50
+    
+    train_model(
+        dataset_dir=dataset_dir,
+        output_dir=output_dir,
+        epochs=epochs
+    )
+
+
 def main():
     print("=" * 50)
     print("POC - Conteo de Paquetes en Cajon")
     print("=" * 50)
+    
+    choice = show_main_menu()
+    
+    if choice == '2':
+        run_labeling_mode()
+        return
+    elif choice == '3':
+        run_training_mode()
+        return
+    elif choice == '4':
+        print("Saliendo...")
+        return
     
     cameras = get_cameras()
     if not cameras:
@@ -425,7 +479,30 @@ def main():
     print(f"Camaras detectadas: {cameras}")
     cam_idx = select_camera_menu(cameras)
     
-    model_path = download_model()
+    custom_model = None
+    for f in os.listdir('models'):
+        if f.endswith('.tflite'):
+            custom_model = os.path.join('models', f)
+            break
+    
+    print("\nSeleccionar modelo:")
+    if custom_model:
+        print(f"  1 - Modelo personalizado ({custom_model})")
+    print("  2 - Modelo por defecto (EfficientDet)")
+    
+    while True:
+        model_choice = input("Opción: ").strip()
+        if model_choice == '1' and custom_model:
+            model_path = custom_model
+            print(f">>> Usando modelo: {model_path}")
+            break
+        elif model_choice == '2':
+            model_path = download_model()
+            break
+        elif not custom_model and model_choice == '1':
+            print("No hay modelos personalizados disponibles")
+        else:
+            print("Opción inválida")
     
     print("Inicializando detector...")
     detector = ObjectDetector(model_path, max_results=15, score_threshold=0.35)
